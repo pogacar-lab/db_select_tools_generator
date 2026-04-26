@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}テーブル定義: {{ table_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4><i class="bi bi-table"></i> テーブル定義: <code>{{ table_name }}</code></h4>
+  <a href="{{ url_for('dashboard.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> 一覧に戻る
+  </a>
+</div>
+
+<table class="table table-bordered table-sm align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th>項目名</th>
+      <th>データ型</th>
+      <th class="text-center">Not Null</th>
+      <th class="text-center">PK</th>
+      <th class="text-center">AI</th>
+      <th class="text-center">U</th>
+      <th>デフォルト値</th>
+      <th>検査</th>
+      <th>外部キー</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for col in schema %}
+    <tr>
+      <td><code>{{ col.name }}</code></td>
+      <td><small class="text-muted font-monospace">{{ col.type }}</small></td>
+      <td class="text-center">{{ "✓" if col.notnull else "" }}</td>
+      <td class="text-center">{{ "✓" if col.pk else "" }}</td>
+      <td class="text-center">{{ "✓" if col.is_ai else "" }}</td>
+      <td class="text-center">{{ "✓" if col.is_unique else "" }}</td>
+      <td><small class="font-monospace">{{ col.default or "" }}</small></td>
+      <td><small class="font-monospace text-muted">{{ col.check or "" }}</small></td>
+      <td>
+        {% if col.fk %}
+        <small class="font-monospace">
+          <span class="text-primary">{{ col.fk.ref_table }}</span>.<span>{{ col.fk.ref_col }}</span>
+        </small>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

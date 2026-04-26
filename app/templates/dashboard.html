@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}ダッシュボード - DBアクセス部品{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4><i class="bi bi-list-ul"></i> ツール関数一覧</h4>
+  <div>
+    <a href="{{ url_for('output.download_all_python') }}" class="btn btn-sm btn-outline-secondary me-1">
+      <i class="bi bi-download"></i> 全Python
+    </a>
+    <a href="{{ url_for('output.download_all_json') }}" class="btn btn-sm btn-outline-secondary me-1">
+      <i class="bi bi-download"></i> 全JSON
+    </a>
+    <a href="{{ url_for('editor.edit_function') }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg"></i> 新規作成
+    </a>
+  </div>
+</div>
+
+{% if funcs %}
+<table class="table table-hover table-bordered align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th>関数名</th>
+      <th>対象テーブル</th>
+      <th>説明</th>
+      <th style="width:260px">操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in funcs %}
+    <tr>
+      <td><a href="{{ url_for('editor.edit_function', function_id=f.id) }}"><code>{{ f.name }}</code></a></td>
+      <td><a href="{{ url_for('dashboard.table_info', table_name=f.target_table) }}"><code>{{ f.target_table }}</code></a></td>
+      <td>{{ f.description or "—" }}</td>
+      <td>
+        <a href="{{ url_for('output.view', function_id=f.id) }}" class="btn btn-sm btn-outline-success me-1">
+          <i class="bi bi-code-slash"></i> 出力
+        </a>
+        <a href="{{ url_for('consistency.report_one', function_id=f.id) }}" class="btn btn-sm btn-outline-warning">
+          <i class="bi bi-check2-circle"></i>
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="alert alert-info">
+  ツール関数が未登録です。<a href="{{ url_for('editor.edit_function') }}">新規作成</a>してください。
+</div>
+{% endif %}
+{% endblock %}

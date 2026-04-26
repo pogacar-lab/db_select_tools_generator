@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% block title %}APIテスト - DBアクセス部品{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-play-circle"></i> APIテスト
+  {% if is_dry_run %}
+  <span class="badge bg-warning text-dark ms-2">ドライランモード</span>
+  {% endif %}
+</h4>
+
+<div class="row g-3">
+  <!-- 左: 入力パネル -->
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header fw-bold">テスト設定</div>
+      <div class="card-body">
+
+        {% if not is_dry_run %}
+        <!-- 通常モード: モード選択 -->
+        <div class="mb-3">
+          <label class="form-label fw-bold">実行モード</label>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="mode" id="mode-real" value="real" checked onchange="toggleMode()">
+            <label class="form-check-label" for="mode-real">
+              {% if is_openai_mode %}通常（OpenAI API呼び出し）{% else %}通常（Azure OpenAI API呼び出し）{% endif %}
+            </label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="mode" id="mode-dry" value="dry-run" onchange="toggleMode()">
+            <label class="form-check-label" for="mode-dry">Dry-Runモード（API未接続）</label>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- プロンプト -->
+        <div class="mb-3">
+          <label class="form-label fw-bold">プロンプト</label>
+          <textarea id="prompt" class="form-control" rows="4"
+                    placeholder="例：Pythonカテゴリのプログラムを5件取得してください"></textarea>
+        </div>
+
+        <!-- 通常モード: 関数選択（複数可） -->
+        <div id="panel-real" class="mb-3">
+          <label class="form-label fw-bold">使用するツール関数（複数選択可）</label>
+          {% for f in funcs %}
+          <div class="form-check">
+            <input class="form-check-input fn-check" type="checkbox" value="{{ f.id }}" id="fn-{{ f.id }}">
+            <label class="form-check-label" for="fn-{{ f.id }}">
+              <code>{{ f.name }}</code>
+              <small class="text-muted">（{{ f.target_table }}）</small>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+
+        <!-- Dry-Runモード: 関数選択（1つ）＋返却 JSON -->
+        <div id="panel-dry" class="mb-3" style="{{ '' if is_dry_run else 'display:none' }}">
+          <label class="form-label fw-bold">関数を選択</label>
+          <select id="dry-function" class="form-select mb-2" onchange="loadToolsJson()">
+            <option value="">-- 選択 --</option>
+            {% for f in funcs %}
+            <option value="{{ f.id }}">{{ f.name }}</option>
+            {% endfor %}
+          </select>
+          <label class="form-label fw-bold">返却 JSON</label>
+          <textarea id="dry-args" class="form-control font-monospace" rows="8"
+                    placeholder='{"query_type": "rows", "select_items": ["id", "name"], "filters": {"category": "Python"}, "limit": 10}'></textarea>
+          <button class="btn btn-sm btn-outline-secondary mt-1" onclick="loadToolsJson()">
+            <i class="bi bi-arrow-repeat"></i> tools JSONを参照
+          </button>
+        </div>
+
+        <button class="btn btn-primary w-100" onclick="runTest()">
+          <i class="bi bi-play-fill"></i> 実行
+        </button>
+      </div>
+    </div>
+
+    <!-- tools JSON プレビュー（Dry-Runモードで表示） -->
+    <div id="tools-json-preview" class="card mt-3" style="display:none">
+      <div class="card-header fw-bold">生成される Tools JSON</div>
+      <div class="card-body p-2">
+        <pre class="code-block m-0" id="tools-json-content" style="max-height:300px;overflow-y:auto"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右: 結果パネル -->
+  <div class="col-md-7">
+
+    <!-- Dry-Run: 単発結果 -->
+    <div id="result-area" style="display:none">
+      <div class="card mb-2">
+        <div class="card-header fw-bold">呼び出されたツール</div>
+        <div class="card-body">
+          <div><strong>関数名:</strong> <code id="res-fn-name"></code></div>
+          <div class="mt-2"><strong>引数:</strong></div>
+          <pre class="code-block mt-1" id="res-args"></pre>
+        </div>
+      </div>
+      <div class="card mb-2">
+        <div class="card-header fw-bold">実行 SQL</div>
+        <div class="card-body">
+          <pre class="code-block" id="res-sql"></pre>
+        </div>
+      </div>
+      <div class="card mb-2">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-bold">結果 <span class="badge bg-secondary" id="res-count"></span></span>
+        </div>
+        <div class="card-body p-2 overflow-auto" style="max-height:300px">
+          <table class="table table-sm table-bordered mb-0" id="res-table">
+            <thead id="res-thead"></thead>
+            <tbody id="res-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <button class="btn btn-sm btn-link p-0 text-decoration-none fw-bold"
+                  data-bs-toggle="collapse" data-bs-target="#raw-response">
+            RAW APIレスポンス <i class="bi bi-chevron-down"></i>
+          </button>
+        </div>
+        <div class="collapse" id="raw-response">
+          <div class="card-body p-2">
+            <pre class="code-block" id="res-raw" style="max-height:300px;overflow-y:auto"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 通常モード: 会話ログ -->
+    <div id="conversation-area" style="display:none">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0"><i class="bi bi-chat-dots"></i> 会話ログ</h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="clearConversation()">
+          <i class="bi bi-x-circle"></i> クリア
+        </button>
+      </div>
+      <div id="conversation-log"></div>
+    </div>
+
+    <div id="result-error" class="alert alert-danger mt-2" style="display:none"></div>
+    <div id="result-loading" class="text-center py-5" style="display:none">
+      <div class="spinner-border text-primary"></div>
+      <div class="mt-2">実行中...</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const IS_DRY_RUN = {{ 'true' if is_dry_run else 'false' }};
+const MAX_LOOP_STEPS = 10;
+
+// ループ状態
+let _loopMessages = [];
+let _loopFunctionIds = [];
+let _loopStepCount = 0;
+const _stepResults = new Map();  // stepNum -> [{tool_call_id, content}]
+
+// ---- モード切替 ----
+
+function getMode() {
+  if (IS_DRY_RUN) return 'dry-run';
+  const el = document.querySelector('input[name="mode"]:checked');
+  return el ? el.value : 'real';
+}
+
+function toggleMode() {
+  const mode = getMode();
+  document.getElementById('panel-real').style.display = mode === 'real' ? '' : 'none';
+  document.getElementById('panel-dry').style.display  = mode === 'dry-run' ? '' : 'none';
+}
+
+async function loadToolsJson() {
+  const fid = document.getElementById('dry-function').value;
+  if (!fid) return;
+  const r = await fetch(`/apitest/tools-json/${fid}`);
+  const data = await r.json();
+  document.getElementById('tools-json-content').textContent = JSON.stringify(data, null, 2);
+  document.getElementById('tools-json-preview').style.display = '';
+}
+
+// ---- エントリポイント ----
+
+async function runTest() {
+  const prompt = document.getElementById('prompt').value.trim();
+  if (!prompt) { alert('プロンプトを入力してください'); return; }
+
+  if (getMode() === 'dry-run') {
+    await runDry(prompt);
+  } else {
+    await startLoop(prompt);
+  }
+}
+
+// ---- Dry-Run（単発） ----
+
+async function runDry(prompt) {
+  const fid = document.getElementById('dry-function').value;
+  if (!fid) { alert('関数を選択してください'); return; }
+  let args = {};
+  try { args = JSON.parse(document.getElementById('dry-args').value || '{}'); }
+  catch(e) { alert('返却 JSONが不正です'); return; }
+
+  _showLoading(true);
+  try {
+    const res = await fetch('/apitest/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode: 'dry-run', prompt, function_id: parseInt(fid), arguments: args }),
+    });
+    const data = await res.json();
+    _showLoading(false);
+    if (data.error) { _showError(data.error); return; }
+    renderDryResult(data);
+  } catch(e) {
+    _showLoading(false);
+    _showError(e.toString());
+  }
+}
+
+function renderDryResult(data) {
+  document.getElementById('conversation-area').style.display = 'none';
+  document.getElementById('res-fn-name').textContent = data.function_name || '—';
+  document.getElementById('res-args').textContent = JSON.stringify(data.tool_arguments, null, 2);
+  document.getElementById('res-sql').textContent = data.executed_sql || '—';
+  document.getElementById('res-count').textContent = data.result_count + '件';
+  document.getElementById('res-raw').textContent = JSON.stringify(data.raw_response, null, 2);
+
+  const rows = data.results || [];
+  const thead = document.getElementById('res-thead');
+  const tbody = document.getElementById('res-tbody');
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+  if (rows.length > 0) {
+    const keys = Object.keys(rows[0]);
+    thead.innerHTML = '<tr>' + keys.map(k => `<th>${esc(k)}</th>`).join('') + '</tr>';
+    tbody.innerHTML = rows.map(r =>
+      '<tr>' + keys.map(k => `<td>${r[k] ?? ''}</td>`).join('') + '</tr>'
+    ).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="99" class="text-center text-muted">結果なし</td></tr>';
+  }
+  document.getElementById('result-area').style.display = '';
+}
+
+// ---- 通常モード：ループ ----
+
+async function startLoop(prompt) {
+  const fids = [...document.querySelectorAll('.fn-check:checked')].map(el => parseInt(el.value));
+  if (!fids.length) { alert('ツール関数を1つ以上選択してください'); return; }
+
+  _loopMessages   = [{"role": "user", "content": prompt}];
+  _loopFunctionIds = fids;
+  _loopStepCount  = 0;
+  _stepResults.clear();
+
+  document.getElementById('result-area').style.display = 'none';
+  document.getElementById('result-error').style.display = 'none';
+  document.getElementById('conversation-log').innerHTML = '';
+  document.getElementById('conversation-area').style.display = '';
+
+  _appendUserBubble(prompt);
+  await _callNextStep();
+}
+
+async function _callNextStep() {
+  if (_loopStepCount >= MAX_LOOP_STEPS) {
+    _appendSystemMsg(`最大ステップ数（${MAX_LOOP_STEPS}）に達しました`, 'warning');
+    return;
+  }
+
+  const loadingEl = _appendLoadingBubble();
+  try {
+    const res = await fetch('/apitest/run_step', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ messages: _loopMessages, function_ids: _loopFunctionIds }),
+    });
+    const data = await res.json();
+    loadingEl.remove();
+
+    if (data.type === 'error' || data.error) {
+      _appendSystemMsg(data.error || 'エラーが発生しました', 'danger');
+      return;
+    }
+
+    _loopStepCount++;
+
+    if (data.type === 'tool_call') {
+      _loopMessages.push(data.assistant_message);
+      _appendToolCallStep(data, _loopStepCount);
+    } else if (data.type === 'final') {
+      _appendFinalBubble(data.content);
+    }
+  } catch(e) {
+    loadingEl.remove();
+    _appendSystemMsg(e.toString(), 'danger');
+  }
+}
+
+async function sendToolResults(stepNum, btnEl) {
+  btnEl.disabled = true;
+  // 以前のステップの送信ボタンも無効化
+  document.querySelectorAll('.send-btn').forEach(b => { b.disabled = true; });
+
+  const results = _stepResults.get(stepNum) || [];
+  for (const r of results) {
+    _loopMessages.push({ role: "tool", tool_call_id: r.tool_call_id, content: r.content });
+  }
+  _stepResults.delete(stepNum);
+  await _callNextStep();
+}
+
+function clearConversation() {
+  _loopMessages = [];
+  _loopFunctionIds = [];
+  _loopStepCount = 0;
+  _stepResults.clear();
+  document.getElementById('conversation-log').innerHTML = '';
+  document.getElementById('conversation-area').style.display = 'none';
+}
+
+// ---- 会話ログ描画ヘルパー ----
+
+function _appendUserBubble(prompt) {
+  const div = document.createElement('div');
+  div.className = 'mb-3 text-end';
+  div.innerHTML = `
+    <span class="badge bg-secondary mb-1"><i class="bi bi-person-fill"></i> ユーザー</span>
+    <div class="card ms-5">
+      <div class="card-body py-2 px-3" style="white-space:pre-wrap">${esc(prompt)}</div>
+    </div>`;
+  _logAppend(div);
+}
+
+function _appendToolCallStep(data, stepNum) {
+  // ステップのツール結果を保存
+  _stepResults.set(stepNum, (data.tool_calls || []).map(tc => ({
+    tool_call_id: tc.tool_call_id,
+    content: tc.error ? `Error: ${tc.error}` : JSON.stringify(tc.results),
+  })));
+
+  const toolsHtml = (data.tool_calls || []).map((tc, i) => {
+    const rows = tc.results || [];
+    let bodyHtml;
+    if (tc.error) {
+      bodyHtml = `<div class="alert alert-danger py-1 px-2 mb-0 small">${esc(tc.error)}</div>`;
+    } else if (rows.length === 0) {
+      bodyHtml = '<span class="text-muted small">結果なし</span>';
+    } else {
+      const keys = Object.keys(rows[0]);
+      bodyHtml = `
+        <div class="overflow-auto" style="max-height:160px">
+          <table class="table table-sm table-bordered mb-0">
+            <thead class="table-secondary"><tr>${keys.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead>
+            <tbody>${rows.map(r => '<tr>' + keys.map(k => `<td>${esc(String(r[k] ?? ''))}</td>`).join('') + '</tr>').join('')}</tbody>
+          </table>
+        </div>`;
+    }
+    const border = i > 0 ? ' border-top mt-0' : '';
+    return `
+      <div class="p-3${border}">
+        <div class="mb-1"><strong>関数:</strong> <code>${esc(tc.function_name)}</code>
+          <span class="badge bg-secondary ms-1">${tc.result_count}件</span></div>
+        <pre class="code-block mb-2" style="font-size:.78rem;max-height:100px;overflow-y:auto">${esc(JSON.stringify(tc.arguments, null, 2))}</pre>
+        <div class="mb-1 small text-muted">実行 SQL</div>
+        <pre class="code-block mb-2" style="font-size:.78rem">${esc(tc.executed_sql || '')}</pre>
+        ${bodyHtml}
+      </div>`;
+  }).join('');
+
+  const div = document.createElement('div');
+  div.className = 'mb-3';
+  div.innerHTML = `
+    <span class="badge bg-primary mb-1">
+      <i class="bi bi-robot"></i> LLM → ツール呼び出し &nbsp; ステップ ${stepNum}
+    </span>
+    <div class="card">
+      <div class="card-body p-0">${toolsHtml}</div>
+      <div class="card-footer text-end py-2">
+        <button class="btn btn-primary btn-sm send-btn"
+                onclick="sendToolResults(${stepNum}, this)">
+          この結果をLLMに送信 <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+    </div>`;
+  _logAppend(div);
+}
+
+function _appendFinalBubble(content) {
+  const div = document.createElement('div');
+  div.className = 'mb-3';
+  div.innerHTML = `
+    <span class="badge bg-success mb-1"><i class="bi bi-robot"></i> LLM 最終回答</span>
+    <div class="card border-success">
+      <div class="card-body py-2" style="white-space:pre-wrap">${esc(content || '（テキスト回答なし）')}</div>
+    </div>`;
+  _logAppend(div);
+}
+
+function _appendLoadingBubble() {
+  const div = document.createElement('div');
+  div.className = 'text-center py-2 text-muted small';
+  div.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div>LLMに問い合わせ中...';
+  _logAppend(div);
+  return div;
+}
+
+function _appendSystemMsg(msg, type) {
+  const div = document.createElement('div');
+  div.className = `alert alert-${type} py-2 small`;
+  div.textContent = msg;
+  _logAppend(div);
+}
+
+function _logAppend(el) {
+  const log = document.getElementById('conversation-log');
+  log.appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ---- 共通ユーティリティ ----
+
+function _showLoading(on) {
+  document.getElementById('result-loading').style.display = on ? '' : 'none';
+  if (on) {
+    document.getElementById('result-area').style.display = 'none';
+    document.getElementById('result-error').style.display = 'none';
+  }
+}
+
+function _showError(msg) {
+  document.getElementById('result-error').textContent = msg;
+  document.getElementById('result-error').style.display = '';
+}
+
+function esc(str) {
+  if (typeof str !== 'string') str = String(str ?? '');
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

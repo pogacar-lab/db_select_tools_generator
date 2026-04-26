@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}テスト履歴 - DBアクセス部品{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4><i class="bi bi-clock-history"></i> テスト結果履歴</h4>
+  <small class="text-muted">全 {{ total }} 件</small>
+</div>
+
+{% if rows %}
+<table class="table table-hover table-bordered align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th style="width:5%">ID</th>
+      <th style="width:14%">実行日時</th>
+      <th style="width:8%">モード</th>
+      <th style="width:14%">関数名</th>
+      <th>プロンプト（冒頭）</th>
+      <th style="width:7%" class="text-center">件数</th>
+      <th style="width:15%">メモ</th>
+      <th style="width:5%"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="text-muted">{{ r.id }}</td>
+      <td><small>{{ r.executed_at }}</small></td>
+      <td>
+        {% if r.mode == 'dry-run' %}
+        <span class="badge bg-warning text-dark">ドライラン</span>
+        {% else %}
+        <span class="badge bg-primary">通常</span>
+        {% endif %}
+      </td>
+      <td><code>{{ r.function_name }}</code></td>
+      <td><small>{{ r.prompt_head }}{% if r.prompt_head | length >= 60 %}…{% endif %}</small></td>
+      <td class="text-center">{{ r.result_count }}</td>
+      <td><small>{{ r.memo }}</small></td>
+      <td>
+        <a href="{{ url_for('apitest.history_detail', history_id=r.id) }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-eye"></i>
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- ページネーション -->
+{% if pages > 1 %}
+<nav>
+  <ul class="pagination pagination-sm">
+    {% for p in range(1, pages + 1) %}
+    <li class="page-item {{ 'active' if p == page }}">
+      <a class="page-link" href="{{ url_for('apitest.history_list', page=p) }}">{{ p }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="alert alert-info">テスト結果がまだありません。</div>
+{% endif %}
+{% endblock %}

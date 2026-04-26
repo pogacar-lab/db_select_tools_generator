@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}整合性チェック - DBアクセス部品{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4><i class="bi bi-check2-circle"></i>
+    {{ "整合性チェック: " + results[0].function_name if single else "整合性チェック（全関数）" }}
+  </h4>
+  {% if single %}
+  <a href="{{ url_for('consistency.report_all') }}" class="btn btn-sm btn-outline-secondary">
+    全関数チェック
+  </a>
+  {% else %}
+  <a href="{{ url_for('consistency.report_all') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-clockwise"></i> 再チェック
+  </a>
+  {% endif %}
+</div>
+
+{% for r in results %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div>
+      <span class="badge badge-{{ r.status }} me-2">{{ r.status }}</span>
+      <code class="fs-6">{{ r.function_name }}</code>
+      <small class="text-muted ms-2">→ テーブル: <code>{{ r.target_table }}</code></small>
+    </div>
+    <div>
+      <a href="{{ url_for('editor.edit_function', function_id=r.function_id) }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-pencil"></i> 関数編集
+      </a>
+    </div>
+  </div>
+  {% if r.issues %}
+  <ul class="list-group list-group-flush">
+    {% for issue in r.issues %}
+    <li class="list-group-item d-flex align-items-center gap-2">
+      {% if issue.level == "CRITICAL" %}
+        <span class="badge bg-danger">CRITICAL</span>
+      {% elif issue.level == "ERROR" %}
+        <span class="badge bg-warning text-dark">ERROR</span>
+      {% else %}
+        <span class="badge bg-secondary">WARNING</span>
+      {% endif %}
+      {{ issue.message }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="card-body text-success"><i class="bi bi-check-circle-fill"></i> 問題なし</div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

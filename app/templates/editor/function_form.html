@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}{{ "関数編集" if func else "新規関数" }} - DBアクセス部品{% endblock %}
+{% block content %}
+<h4 class="mb-3">
+  <i class="bi bi-pencil-square"></i>
+  {{ "関数編集: " + func.name if func else "新規ツール関数" }}
+</h4>
+
+<form method="post">
+
+  {% if func %}
+  {# ===== 編集モード: 従来レイアウト ===== #}
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label fw-bold">関数名 <span class="text-danger">*</span></label>
+      <input type="text" name="name" class="form-control font-monospace"
+             value="{{ func.name }}" required placeholder="get_programs">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-bold">対象テーブル <span class="text-danger">*</span></label>
+      <select name="target_table" class="form-select" required>
+        <option value="">-- 選択 --</option>
+        {% for t in tables %}
+        <option value="{{ t }}" {{ "selected" if func.target_table == t }}>{{ t }}</option>
+        {% endfor %}
+        {% if func.target_table not in tables %}
+        <option value="{{ func.target_table }}" selected>{{ func.target_table }} (未検出)</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label fw-bold">limit デフォルト値</label>
+      <input type="number" name="limit_default" class="form-control"
+             value="{{ func.limit_default }}" min="1">
+    </div>
+  </div>
+
+  {% else %}
+  {# ===== 新規作成モード: プルダウン＋インラインカラム ===== #}
+  <div class="row g-3 align-items-end">
+    <div class="col-md-5">
+      <label class="form-label fw-bold">対象テーブル <span class="text-danger">*</span></label>
+      <select id="table-select" name="target_table" class="form-select" required
+              onchange="onTableSelect(this)">
+        <option value="">-- テーブルを選択 --</option>
+        {% for t in tables %}
+        <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-bold">関数名（自動設定）</label>
+      <div class="input-group">
+        <span class="input-group-text font-monospace text-muted">get_</span>
+        <input type="text" id="fn-name-display" class="form-control font-monospace bg-light"
+               readonly placeholder="テーブル選択後に自動入力">
+      </div>
+      <input type="hidden" name="name" id="fn-name-hidden">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label fw-bold">limit デフォルト値</label>
+      <input type="number" name="limit_default" class="form-control" value="100" min="1">
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="mt-3">
+    <label class="form-label fw-bold">関数説明（LLMへの1行説明）</label>
+    <input type="text" name="description" class="form-control"
+           value="{{ func.description if func else '' }}"
+           placeholder="プログラム一覧を取得します。">
+  </div>
+
+  <div class="mt-3">
+    <label class="form-label fw-bold">使用例（1行1例）</label>
+    <textarea name="usage_examples" class="form-control font-monospace" rows="3"
+              placeholder="プログラム名で絞り込んで取得する&#10;カテゴリを指定して件数を取得する">{{ func.usage_examples if func else '' }}</textarea>
+  </div>
+
+  <div class="row mt-3">
+    <div class="col-md-6">
+      <label class="form-label fw-bold">filtersパラメタの説明</label>
+      <textarea name="filters_description" class="form-control" rows="3"
+                placeholder="絞り込み条件。項目名と値を指定するとWHERE句に展開されます。">{{ func.filters_description if func else '' }}</textarea>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label fw-bold">select_itemsパラメタの説明</label>
+      <textarea name="select_description" class="form-control" rows="3"
+                placeholder="取得する項目名のリスト。countを指定するとCOUNT(*)として展開されます。">{{ func.select_description if func else '' }}</textarea>
+    </div>
+  </div>
+
+  {% if func and columns is not none %}
+  {# ===== 編集モード: カラム定義（サーバーサイドレンダリング） ===== #}
+  <div class="mt-4">
+    <h6 class="fw-bold border-bottom pb-2 mb-3">
+      <i class="bi bi-table"></i> カラム定義
+    </h6>
+    <table class="table table-bordered table-sm align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th style="width:4%">#</th>
+          <th style="width:16%">カラム名<br><small class="fw-normal text-muted">（実テーブル）</small></th>
+          <th style="width:7%">型</th>
+          <th style="width:30%">select_items 用<br><small class="fw-normal text-muted">和名（設定＆取得可チェックで取得対象）</small></th>
+          <th>filters 用<br><small class="fw-normal text-muted">説明（設定＆フィルタ可チェックでフィルタ対象）</small></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i, col in columns | enumerate %}
+        <tr>
+          <td class="text-muted text-center">{{ i + 1 }}</td>
+          <td>
+            <input type="hidden" name="column_name" value="{{ col.column_name }}">
+            <code>{{ col.column_name }}</code>
+          </td>
+          <td><small class="text-muted">{{ col.db_type }}</small></td>
+          <td>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox"
+                     name="selectable_{{ i }}" id="sel_{{ i }}"
+                     {{ "checked" if col.is_selectable }}>
+              <label class="form-check-label small fw-bold" for="sel_{{ i }}">取得可</label>
+            </div>
+            <input type="text" name="select_items_description" class="form-control form-control-sm"
+                   value="{{ col.select_items_description }}" placeholder="例：プログラム名">
+          </td>
+          <td>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox"
+                     name="filterable_{{ i }}" id="filt_{{ i }}"
+                     {{ "checked" if col.is_filterable }}
+                     onchange="toggleFilterOpts({{ i }})">
+              <label class="form-check-label small fw-bold" for="filt_{{ i }}">フィルタ可</label>
+            </div>
+            <input type="text" name="filter_description" class="form-control form-control-sm mb-1"
+                   value="{{ col.filter_description }}" placeholder="例：プログラムの名称">
+            <div id="filter-opts-{{ i }}"
+                 class="p-2 rounded border bg-light"
+                 style="{{ '' if col.is_filterable else 'display:none' }}">
+              <div class="d-flex flex-wrap gap-3 mb-1">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox"
+                         name="allow_like_{{ i }}" id="like_{{ i }}"
+                         {{ "checked" if col.allow_like != 0 }}>
+                  <label class="form-check-label small" for="like_{{ i }}">LIKE可（%・_）</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox"
+                         name="allow_array_{{ i }}" id="arr_{{ i }}"
+                         {{ "checked" if col.allow_array != 0 }}>
+                  <label class="form-check-label small" for="arr_{{ i }}">配列可（IN）</label>
+                </div>
+              </div>
+              <div>
+                <small class="text-muted me-1">演算子：</small>
+                {% for op in ["=", "<=", "<", ">=", ">", "!="] %}
+                {% set op_key = op | replace("=","eq") | replace("<","lt") | replace(">","gt") | replace("!","ne") %}
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="checkbox"
+                         name="op_{{ op_key }}_{{ i }}" id="op_{{ op_key }}_{{ i }}"
+                         {{ "checked" if op in (col.allow_operators or "=").split(",") }}>
+                  <label class="form-check-label small font-monospace"
+                         for="op_{{ op_key }}_{{ i }}">{{ op }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if not func %}
+  {# ===== 新規作成: インラインカラム定義セクション ===== #}
+  <div id="col-section" class="mt-4" style="display:none">
+    <h6 class="fw-bold border-bottom pb-2 mb-3">
+      <i class="bi bi-table"></i> カラム定義
+      <small class="text-muted fw-normal ms-2">
+        各カラムの和名・説明・用途を設定してください（後から変更可能）
+      </small>
+    </h6>
+    <table class="table table-bordered table-sm align-middle mb-0">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width:20%">カラム名 / 型</th>
+          <th style="width:32%">select_items 用<br><small class="fw-normal text-muted">和名（設定＆取得可チェックで取得対象）</small></th>
+          <th>filters 用<br><small class="fw-normal text-muted">説明（設定＆フィルタ可チェックでフィルタ対象）</small></th>
+        </tr>
+      </thead>
+      <tbody id="col-tbody"></tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="mt-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-save"></i> 保存
+    </button>
+    <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary">キャンセル</a>
+    {% if func %}
+    <form method="post" action="{{ url_for('editor.delete_function', function_id=func.id) }}"
+          class="ms-auto"
+          onsubmit="return confirm('削除してよいですか？')">
+      <button type="submit" class="btn btn-outline-danger">
+        <i class="bi bi-trash"></i> 削除
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+{% if func and columns is not none %}
+<script>
+function toggleFilterOpts(i) {
+  const cb  = document.getElementById('filt_' + i);
+  const div = document.getElementById('filter-opts-' + i);
+  div.style.display = cb.checked ? '' : 'none';
+}
+</script>
+{% endif %}
+{% if not func %}
+<script>
+async function onTableSelect(sel) {
+  const table = sel.value;
+  const nameDisplay = document.getElementById('fn-name-display');
+  const nameHidden  = document.getElementById('fn-name-hidden');
+  const section     = document.getElementById('col-section');
+
+  if (!table) {
+    nameDisplay.value = '';
+    nameHidden.value  = '';
+    section.style.display = 'none';
+    document.getElementById('col-tbody').innerHTML = '';
+    return;
+  }
+
+  nameDisplay.value = table;
+  nameHidden.value  = `get_${table}`;
+
+  const res  = await fetch(`/tools/table-columns?table=${encodeURIComponent(table)}`);
+  const cols = await res.json();
+  renderColumns(cols);
+  section.style.display = '';
+}
+
+const _ALL_OPS = ['=', '<=', '<', '>=', '>', '!='];
+
+function _opKey(op) {
+  return op.replace(/=/g,'eq').replace(/</g,'lt').replace(/>/g,'gt').replace(/!/g,'ne');
+}
+
+function renderColumns(cols) {
+  const tbody = document.getElementById('col-tbody');
+  tbody.innerHTML = cols.map((col, i) => {
+    const opCheckboxes = _ALL_OPS.map(op => {
+      const key     = _opKey(op);
+      const checked = (op === '=') ? 'checked' : '';
+      return `<div class="form-check form-check-inline">
+        <input class="form-check-input" type="checkbox"
+               name="op_${key}_${i}" id="op_${key}_new_${i}" ${checked}>
+        <label class="form-check-label small font-monospace"
+               for="op_${key}_new_${i}">${escHtml(op)}</label>
+      </div>`;
+    }).join('');
+
+    return `
+    <tr>
+      <td>
+        <input type="hidden" name="column_name" value="${escHtml(col.name)}">
+        <code>${escHtml(col.name)}</code>
+        <br><small class="text-muted">${escHtml(col.type)}</small>
+      </td>
+
+      <td>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox"
+                 name="selectable_${i}" id="sel_new_${i}" checked>
+          <label class="form-check-label small fw-bold" for="sel_new_${i}">取得可</label>
+        </div>
+        <input type="text" name="select_items_description" class="form-control form-control-sm"
+               placeholder="例：プログラム名">
+      </td>
+
+      <td>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox"
+                 name="filterable_${i}" id="filt_new_${i}" checked
+                 onchange="toggleFilterOptsNew(${i})">
+          <label class="form-check-label small fw-bold" for="filt_new_${i}">フィルタ可</label>
+        </div>
+        <input type="text" name="filter_description" class="form-control form-control-sm mb-1"
+               placeholder="例：プログラムの名称">
+        <div id="filter-opts-new-${i}" class="p-2 rounded border bg-light">
+          <div class="d-flex flex-wrap gap-3 mb-1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+                     name="allow_like_${i}" id="like_new_${i}" checked>
+              <label class="form-check-label small" for="like_new_${i}">LIKE可（%・_）</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+                     name="allow_array_${i}" id="arr_new_${i}" checked>
+              <label class="form-check-label small" for="arr_new_${i}">配列可（IN）</label>
+            </div>
+          </div>
+          <div>
+            <small class="text-muted me-1">演算子：</small>
+            ${opCheckboxes}
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleFilterOptsNew(i) {
+  const cb  = document.getElementById('filt_new_' + i);
+  const div = document.getElementById('filter-opts-new-' + i);
+  div.style.display = cb.checked ? '' : 'none';
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+{% endif %}
+{% endblock %}
