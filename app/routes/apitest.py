@@ -81,6 +81,7 @@ def run_step():
                 "result_count": 0,
                 "results": [],
                 "raw_response": result.get("raw_response", {}),
+                "final_message": result.get("content", ""),
             }
             history_id = history.save(rec)
             _save_api_log(rec, history_id)

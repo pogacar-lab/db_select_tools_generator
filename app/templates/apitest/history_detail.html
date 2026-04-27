@@ -41,6 +41,13 @@
   </div>
 </div>
 
+{% if row.final_message %}
+<div class="card mb-3 border-success">
+  <div class="card-header fw-bold text-success"><i class="bi bi-chat-text"></i> LLM 最終回答</div>
+  <div class="card-body" style="white-space:pre-wrap">{{ row.final_message }}</div>
+</div>
+{% endif %}
+
 <div class="card mb-3">
   <div class="card-header fw-bold">呼び出し引数</div>
   <div class="card-body p-2">

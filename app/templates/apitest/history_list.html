@@ -32,7 +32,13 @@
         <span class="badge bg-primary">通常</span>
         {% endif %}
       </td>
-      <td><code>{{ r.function_name }}</code></td>
+      <td>
+        {% if r.function_name %}
+        <code>{{ r.function_name }}</code>
+        {% else %}
+        <span class="badge bg-success">最終回答</span>
+        {% endif %}
+      </td>
       <td><small>{{ r.prompt_head }}{% if r.prompt_head | length >= 60 %}…{% endif %}</small></td>
       <td class="text-center">{{ r.result_count }}</td>
       <td><small>{{ r.memo }}</small></td>

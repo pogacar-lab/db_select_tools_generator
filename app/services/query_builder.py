@@ -100,7 +100,7 @@ def execute_query(db_path, target_table, select_items, filters, limit,
         exec_params = list(filter_params)
     else:
         select_clause = build_select_clause(select_items, selectable_columns)
-        sql = f"SELECT {select_clause} FROM {_safe_id(target_table)} {where_clause} LIMIT ?".strip()
+        sql = f"SELECT DISTINCT {select_clause} FROM {_safe_id(target_table)} {where_clause} LIMIT ?".strip()
         exec_params = list(filter_params) + [limit]
 
     expanded_sql = _expand_sql(sql, exec_params)

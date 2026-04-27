@@ -1,5 +1,6 @@
 """Test result history operations on history.db."""
 import json
+from datetime import datetime
 from ..database import get_history_db
 
 
@@ -28,10 +29,11 @@ def save(result):
     db = get_history_db()
     cur = db.execute(
         """INSERT INTO tbl_test_results
-           (mode, prompt, function_name, tools_json, tool_arguments,
-            executed_sql, sql_params, result_count, results_json, raw_response)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (executed_at, mode, prompt, function_name, tools_json, tool_arguments,
+            executed_sql, sql_params, result_count, results_json, raw_response, final_message)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             result.get("mode", ""),
             result.get("prompt", ""),
             result.get("function_name", ""),
@@ -42,6 +44,7 @@ def save(result):
             result.get("result_count", 0),
             json.dumps(result.get("results", []), ensure_ascii=False),
             json.dumps(result.get("raw_response", {}), ensure_ascii=False),
+            result.get("final_message", ""),
         ),
     )
     db.commit()
@@ -76,6 +79,16 @@ def get_by_id(history_id):
             pass
     if '?' in (r.get('executed_sql') or ''):
         r['executed_sql'] = _expand_sql(r['executed_sql'], r.get('sql_params') or [])
+    # 旧レコード対応: final_message が未保存でも raw_response から取得
+    if not r.get('final_message') and not r.get('function_name'):
+        try:
+            choices = r.get('raw_response', {}).get('choices', [])
+            if choices:
+                msg = choices[0].get('message', {})
+                if choices[0].get('finish_reason') != 'tool_calls' and msg.get('content'):
+                    r['final_message'] = msg['content']
+        except Exception:
+            pass
     return r
 
 

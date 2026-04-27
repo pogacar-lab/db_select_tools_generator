@@ -106,7 +106,7 @@ def {fn_name}(
         select_clause = ", ".join(
             item for item in select_items if item in SELECTABLE_COLUMNS_{fn_name}
         ) or "*"
-        sql = f"SELECT {{select_clause}} FROM {table} {{where}} LIMIT ?".strip()
+        sql = f"SELECT DISTINCT {{select_clause}} FROM {table} {{where}} LIMIT ?".strip()
         params.append(limit)
 
     with sqlite3.connect(DB_PATH) as conn:
